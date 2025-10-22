@@ -1,0 +1,25 @@
+[
+  {
+    "title_en": "SNSF open data: how to combine datasets to explore the diversity of research outputs",
+    "title_de": "Open Data des SNF: Forschungsoutputs mit kombinierten Datensätzen analysieren",
+    "title_fr": "Données ouvertes du FNS : comment explorer la diversité des productions scientifiques",
+    "author_en": "Simon Gorin, Data Team, SNSF",
+    "author_de": "Simon Gorin, Datenteam, SNF",
+    "author_fr": "Simon Gorin, Data Team, FNS",
+    "datastory_category": "standard",
+    "publication_date_en": "2025-10-23 04:00:00",
+    "publication_date_de": "2025-10-23 04:00:00",
+    "publication_date_fr": "2025-10-23 04:00:00",
+    "languages": "en;de;fr",
+    "short_desc_en": "To facilitate the analysis of its funding activities, the SNSF provides data freely. This data story demonstrates how to combine SNSF datasets, in this case to identify the share of grants with different types of research output.",
+    "short_desc_de": "Der SNF stellt Daten über seine Fördertätigkeit kostenlos für Analysen zur Verfügung. In dieser Datengeschichte zeigen wir, wie Sie Datensätze kombinieren und den Anteil von Projekten mit bestimmten Forschungsoutputs berechnen.",
+    "short_desc_fr": "Le FNS facilite l'analyse de ses activités en fournissant des données en libre accès. Ce récit de données explique comment utiliser ces données afin d’analyser la diversité des productions scientifiques au sein des subsides FNS.",
+    "tags": "T20T,T40T,T310T",
+    "top_story": "false",
+    "github_url": "https://github.com/snsf-data/datastory_snsf_open_data_exploring_output_data",
+    "doi": "https://doi.org/10.46446/datastory.snsf-open-data-exploring-output-data",
+    "name_en": "snsf-open-data-exploring-output-data",
+    "name_de": "snf-open-data-analysen-outputdaten",
+    "name_fr": "donnees-ouvertes-du-fns-explorer-les-donnees-output"
+  }
+]

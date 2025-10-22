@@ -1,0 +1,688 @@
+---
+title: "`r params$title`"
+format:
+  html:
+  # docx:
+    theme: theme.scss
+    toc: false
+    css: ["style.css", "fira.css"]
+    mainfont: Fira Code
+    monofont: 'Fira Code'
+    fontsize: "16px"
+    embed-resources: true
+    page-layout: custom
+    link-external-newwindow: true
+    footnotes-hover: true
+    fig-align: center
+    fig-format: retina
+    fig-dpi: 300
+    code-annotations: select
+    code-block-bg: "#e0edf3"
+language:
+  section-title-footnotes: "Fussnoten"
+params:
+  title: "Open Data des SNF: Forschungsoutputs mit kombinierten Datensätzen analysieren"
+  lead: "Der SNF stellt Daten über seine Fördertätigkeit kostenlos für Analysen zur Verfügung. In dieser Datengeschichte zeigen wir, wie Sie Datensätze kombinieren und den Anteil von Projekten mit bestimmten Forschungsoutputs berechnen."
+  publication_date: "2025-10-23 04:00:00"
+  lang: de
+  use_theinhardt: false
+  reg_font_path: ""
+  bold_font_path: ""
+  it_font_path: ""
+  boldit_font_path: ""
+  doi_url: "https://doi.org/10.46446/datastory.snsf-open-data-exploring-output-data"
+  github_url: "https://github.com/snsf-data/datastory_snsf_open_data_exploring_output_data"
+execute:
+  echo: true
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: console
+---
+
+```{r general-setup}
+#| include: false
+
+# Install snf.datastory package if not available, otherwise load it
+if (!require("snf.datastory")) {
+  if (!require("devtools")) {
+    install.packages("devtools")
+    library(devtools)
+  }
+  install_github("snsf-data/snf.datastory")
+  library(snf.datastory)
+}
+
+# Load packages
+library(stringr)
+library(conflicted)
+library(ggplot2)
+library(ggiraph)
+library(here)
+library(showtext)
+library(systemfonts)
+
+# Conflict preferences
+conflict_prefer("filter", "dplyr")
+conflict_prefer("get_datastory_theme", "snf.datastory")
+conflict_prefer("get_datastory_scheme", "snf.datastory")
+
+use_theinhardt <- params$use_theinhardt
+
+if (use_theinhardt) {
+  
+  # Need to register the font to allow its use by ggiraph when creating SVG
+  # files.
+  if (!font_family_exists("Theinhardt")) {
+    
+    # Register existing/downloaded fonts
+    register_font(
+      name = "Theinhardt",
+      plain = list(params$reg_font_path, 0),
+      bold = list(params$bol_font_path, 0),
+      italic = list(params$boldit_font_path, 0),
+      bolditalic = list(params$boldit_font_path, 0)
+    )
+  }
+  
+  font <- "Theinhardt"
+  
+} else {
+  
+  font <- "sans"
+  
+}
+
+# Need if we want to use the registered font in ggiraph plots
+showtext_auto()
+
+# Increase showtext package font resolution
+showtext_opts(dpi = 300 * 2)
+
+# Set the locale for date formatting (Windows)
+Sys.setlocale(
+  "LC_TIME",
+  switch(
+    params$lang,
+    en = "English",
+    de = "German",
+    fr = "French"
+  )
+)
+
+# Knitr hook for local formatting of printed numbers
+knitr::knit_hooks$set(
+  inline = function(x) {
+    if (!is.numeric(x)) {
+      x
+    } else {
+      snf.datastory::print_num(x, params$lang)
+    }
+  }
+)
+```
+
+```{r print-header-infos}
+#| results: asis
+#| echo: false
+
+# Add publication date to header
+cat(format(as.Date(params$publication_date), "%d.%m.%Y"))
+```
+
+```{css, echo = FALSE}
+pre.out {
+background: #fef4e4;
+}
+```
+::: lead
+`r params$lead`
+:::
+
+Dem SNF ist es ein Anliegen, die Öffentlichkeit über seine Fördertätigkeit zu informieren. Dazu dienen auch die frei zugänglichen Daten (Open Data) auf dem SNF-Datenportal. Dieser Artikel ist Teil einer Serie, bei der wir aufzeigen, wie diese Daten verwendet werden können. Wir hoffen, dass dieses Tutorial Interessierten hilft, Open Data des SNF für Analysen über die Schweizer Forschungsförderung zu nutzen und dabei neue Ideen umzusetzen.
+
+[Im ersten Teil unserer Serie über Open Data des SNF](https://data.snf.ch/stories/offene-daten-analysieren-wer-erhaelt-foerderung-de.html),erklärten wir, wie man auf den Datensatz zu den SNF-Projekten zugreift und damit die jährlichen Zahlen zur Höhe und Anzahl der Förderbeiträge analysiert. Die [SNF-Datensätze](https://data.snf.ch/datasets) beschränken sich jedoch nicht auf kategoriale und numerische Metadaten über die unterstützten Projekte. Sie enthalten auch Einzelheiten wie die beteiligten Personen, die Abstracts und den Forschungsoutput. Durch die Kombination mehrerer Datensätze können Sie vielfältige Fragen untersuchen.
+
+In diesem zweiten Teil der Serie über Open Data erfahren Sie, wie Sie SNF-Datensätze mit der [Programmiersprache R](https://www.r-project.org/) und Paketen aus dem *[tidyverse](https://www.tidyverse.org/)* lesen und kombinieren können. Durch die Verknüpfung der Datensätze «Projekte» und «Outputdaten» erstellen wir eine Grafik, die veranschaulicht, wie vielfältig die Forschungsoutputs im Rahmen von SNF-Projekten sind.^[Wie auf der linken Seite der Grafik deutlich zu sehen ist, wurden bis Mitte 2011 kaum relevante Daten erfasst. Ab diesem Jahr verlangte der SNF von den Forschenden systematisch Angaben über ihren Forschungsoutput. Weitere Einzelheiten finden Sie in der Infobox am Ende dieses Tutorials.] Mit Massnahmen wie der Unterzeichnung der [DORA-Erklärung](https://www.snf.ch/de/neSdcJ948w1y33Nj/thema/dora-deklaration) und der Einführung eines [narrativen Lebenslaufs](https://www.snf.ch/de/f8TLKrHtiaxVbevw/seite/foerderung/dokumente-downloads/vorgaben-cv-liste-forschungsoutputs), engagiert sich der SNF an vorderster Front dafür, die Qualität des Forschungsoutputs als Ganzes anzuerkennen und nicht nur traditionelle Messgrössen wie Zitationswerte und Publikationslisten zu berücksichtigen.
+
+::: plot-box
+<div class="plot-title">Seit 2011 steigt der Anteil der Projekte mit verschiedenen Arten von Forschungsoutput</div>
+```{r}
+#| echo: false
+#| fig-height: 3.75
+source(here("R", "output_data_figure.R"))
+
+fig1
+```
+:::
+
+::: {.callout-tip style="border-color: #71B294;"}
+## Conseil
+In dieser Datengeschichte sind Code-Beispiele mit ihrem Output in hellblauen bzw. gelben Kästen dargestellt. Wenn Sie auf die eingekreiste Zahl rechts neben den Code-Beispielen klicken, erhalten Sie zusätzliche Erklärungen zum Code.
+
+```{r}
+#| echo: true
+#| class-output: out
+1 + 1 # <1>
+```
+1. Ein Beispiel für eine Code-Annotation.
+:::
+
+### Herunterladen der Datensätze «Projekte» und «Outputdaten»
+
+Wie nutzen Sie die [Datensätze ](https://data.snf.ch/datasets) auf dem [SNF-Datenportal](https://data.snf.ch), um die Vielfalt der Forschungsoutputs im Rahmen von Projekten mit SNF-Beiträgen zu analysieren? Wie bereits erwähnt verwenden wir dazu den Datensatz «Projekte» sowie fünf verschiedene «Outputdaten»-Datensätze: wissenschaftliche Publikationen, anwendungsorientierte Outputs, Kommunikation mit der Öffentlichkeit, Datensets und Veranstaltungen zum Wissenstransfer (siehe Infobox «Über die Outputdaten des SNF» am Ende dieser Datengeschichte für weitere Erklärungen). Im folgenden Code-Beispiel betrachten wir zunächst die Variablen, die im Datensatz «Projekte» verfügbar sind.
+
+```{r}
+#| echo: true
+#| class-output: out
+library(readr) # <1>
+
+datasets_url <- "https://data.snf.ch/public_storage/datasets" #<2>
+
+readr::read_csv2( # <3>
+  file = file.path(datasets_url, "Grant.csv"), # <4>
+  n_max = 0 # <5>
+) |>
+  colnames() # <5>
+```
+1. Wir verwenden das `readr`-Paket, um einen Datensatz vom [SNF-Datenportal mit den Datensätzen](https://data.snf.ch/datasets) herunterzuladen.
+2. Wir erstellen einen String mit der Basis-URL für den Zugriff auf die Datensätze.
+3. Die Datensätze auf dem Datenportal sind durch Strichpunkt getrennt. Um sie zu lesen, verwenden wir also `readr::read_csv2()` (oder `readr::read_delim(delim = ";")`).
+4. Wir müssen die URL des Datensatzes angeben, auf den wir zugreifen wollen, unter Verwendung des `file`-Arguments. Wir verwenden die Basis-URL in `datasets_url`, an die wir den Namen der csv-Datei anhängen (hier «Grant.csv»). Um den Namen der Datei des gewünschten Datensatzes zu erhalten, fahren wir über die entsprechende Schaltfläche «Download CSV», dann sehen wir die Download-URL.
+5. Wenn Sie die Variablen eines Datensatzes konsultieren wollen, ohne den gesamten Datensatz herunterzuladen, können Sie `n_max = 0` setzen und den (leeren, aber mit Spaltennamen versehenen) Datenframe an `colnames()` übergeben.
+
+<div style="margin: 0; line-height: 0.875"><br></div>
+
+Nach der Prüfung der Variablen im Datensatz «Projekte» sehen wir, dass wir die Auswahl^[`GrantNumber` und `EffectiveGrantEndDate` sind die einzigen Variablen, die erforderlich sind, um die einzelnen in einem Jahr beendeten Projekte zu identifizieren. Wir haben jedoch auch `FundingInstrumentReporting` und `State` eingeschlossen. Damit ist es möglich, nur die abgeschlossenen Projekte aus der Projektförderung zu behalten.] auf die folgenden Variablen beschränken können, um unsere Frage zu beantworten:
+
+-   `GrantNumber`: eindeutige Identifikationsnummer des Projekts
+-   `EffectiveGrantEndDate`: Datum, an dem das Projekt tatsächlich endete
+-   `FundingInstrumentReporting`: Mittlere Ebene der Förderinstrument-Hierarchie (wie in den [Kennzahlen des Datenportals ](https://data.snf.ch/key-figures) verwendet)
+-   `State`: Status des Projekts (ein SNF-Projekt erhält nacheinander verschiedene Stati: bewilligt, laufend, abgeschlossen)
+
+Nachdem wir nun unsere relevanten Variablen ausgewählt haben, können wir den vollständigen Datensatz als «Datenframe»-Objekt mit dem Namen grants herunterladen. Beachten Sie den Filter, den wir direkt nach dem Herunterladen auf `EffectiveGrantEndDate`, `FundingInstrumentReporting` und `State` angewendet haben (siehe Annotationen 3 und 4 im Beispiel unten). Da wir uns nur für Projekte im Rahmen der Projektförderung interessieren, die zwischen 2005 und 2024 abgeschlossen wurden, filtern wir die Beiträge heraus, die noch nicht abgeschlossen sind (oder ausserhalb dieses Zeitraums abgeschlossen wurden), ebenso die Projekte, die nicht die Projektförderung betreffen.
+
+```{r}
+#| echo: true
+library(dplyr) # <1>
+
+grants <- readr::read_csv2(
+  file.path(datasets_url, "Grant.csv"),
+  show_col_types = FALSE,
+  col_select = c( # <2>
+    "GrantNumber",
+    "EffectiveGrantEndDate",
+    "FundingInstrumentReporting",
+    "State"
+  ) # <2>
+) |>
+  dplyr::filter( 
+    FundingInstrumentReporting == "Project funding", # <3>
+    EffectiveGrantEndDate >= "2005-01-01", # <4>
+    EffectiveGrantEndDate <= "2024-12-31", # <4>
+    State == "Completed" # <4>
+  )
+```
+1. Das `dplyr`-Paket ist nützlich, um gewisse Data Wranglings durchzuführen.
+2. Wir können `col_select` verwenden, um nur die Variablen auszuwählen, die für uns von Interesse sind. Hier wählen wir die Variablen aus, für die wir nach der Durchsicht der im Datensatz «Projekte» verfügbaren Variablen entschieden haben, dass wir sie verwenden wollen.
+3. Da wir uns für die Outputdaten des grössten Förderinstruments des SNF interessieren, behalten wir nur Beiträge aus der «Projektförderung».
+4. Um die Entwicklung der Outputdaten zu erfassen, , filtern wir nach abgeschlossenen Projekten, die zwischen 2005 und (einschliesslich) 2024 endeten.
+
+<div style="margin: 0; line-height: 0.875"><br></div>
+
+Als Nächstes wiederholen wir diese Schritte analog für die verschiedenen «Outputdaten»-Datensätze.^[Nicht angezeigt wird für eine bessere Lesbarkeit der Datengeschichte der Output der Code-Passage zum Lesen der Variablen, die in den fünf «Outputdaten»-Datensätzen verfügbar sind. Wenn Sie das selber ausprobieren, sehen Sie, welche Variablen verfügbar sind.]
+
+```{r}
+#| echo: true
+#| output: false
+#| class-output: out
+#| code-fold: true
+#| code-summary: |
+#|   Hier klicken, um den Code für die Variablen der verschiedenen
+#|   «Outputdaten»-Datensätze anzusehen.
+# Look at the variables available in the "Output data: Scientific
+# publications" dataset.
+readr::read_csv2( # <1>
+  file = file.path(datasets_url, "OutputdataScientificPublication.csv"),
+  n_max = 0
+) |>
+  colnames()
+
+# Look at the variables available in  the "Output data: Use-inspired
+# outputs" dataset.
+readr::read_csv2(
+  file = file.path(datasets_url, "OutputdataUseInspired.csv"),
+  n_max = 0
+) |>
+  colnames()
+
+# Look at the variables available in the "Output data: Public
+# communication" dataset.
+readr::read_csv2(
+  file = file.path(datasets_url, "OutputdataPublicCommunication.csv"),
+  n_max = 0
+) |>
+  colnames()
+
+# Read the "Output data: Datasets" dataset
+readr::read_csv2(
+  file = file.path(datasets_url, "OutputdataDataset.csv"),
+  n_max = 0
+) |>
+  colnames()
+
+# Look at the variables available in the "Output data: Knowledge transfer
+# events" dataset.
+readr::read_csv2(
+  file = file.path(datasets_url, "OutputdataKnowledgeTransferEvent.csv"),
+  n_max = 0
+) |>
+  colnames() # <1>
+```
+1. Wir können denselben Code wie für den Datensatz «Projekte» nochmals verwenden. Wir müssen nur die URL für jede Art von «Outputdaten»-Datensätzen ändern.
+
+<div style="margin: 0; line-height: 0.875"><br></div>
+
+Uns interessiert für jede Art von Outputdaten der Anteil der Projekte mit mindestens einem aufgelisteten Output. Wir können daher die Variable `GrantNumber`, die in allen «Outputdaten»-Datensätzen vorhanden ist, sowie die eindeutige Identifikationsnummer des Outputs auswählen:
+
+-   `ScientificPublicationId`: eindeutige Identifikationsnummer der wissenschaftlichen Publikation
+-   `UseInspiredId`: eindeutige Identifikationsnummer des anwendungsorientierten Outputs
+-   `PublicCommunicationId`: eindeutige Identifikationsnummer der Kommunikation mit der Öffentlichkeit
+-   `DataSetId`: eindeutige Identifikationsnummer des Datensets
+-   `KnowledgeTransferEventId`: eindeutige Identifikationsnummer der Veranstaltung zum Wissenstransfer
+
+```{r}
+#| echo: true
+#| code-fold: true
+#| code-summary: |
+#|   Hier klicken, um den Code für das Einlesen der verschiedenen
+#|   «Outputdaten»-Datensätze anzusehen.
+# Read the "Output data: Scientific publications" dataset
+output_pub <- readr::read_csv2( # <1>
+  file = file.path(
+    datasets_url,
+    "OutputdataScientificPublication.csv"
+  ),
+  show_col_types = FALSE,
+  col_select = c("ScientificPublicationId", "GrantNumber")
+) # <1>
+
+# Read the "Output data: Use-inspired outputs" dataset
+output_use_inspired <- readr::read_csv2( # <2>
+  file = file.path(
+    datasets_url,
+    "OutputdataUseInspired.csv"
+  ),
+  show_col_types = FALSE,
+  col_select = c("UseInspiredId", "GrantNumber")
+) # <2>
+
+# Read the "Output data: Public communication" dataset
+output_public_comm <- readr::read_csv2( # <3>
+  file = file.path(
+    datasets_url,
+    "OutputdataPublicCommunication.csv"
+  ),
+  show_col_types = FALSE,
+  col_select = c("PublicCommunicationId", "GrantNumber")
+) # <3>
+
+# Read the "Output data: Datasets" dataset
+output_dataset <- readr::read_csv2( # <4>
+  file = file.path(
+    datasets_url,
+    "OutputdataDataset.csv"
+  ),
+  show_col_types = FALSE,
+  col_select = c("DataSetId", "GrantNumber")
+) # <4>
+
+# Read the "Output data: Knowledge transfer events" dataset
+output_knowledge_transfer <- readr::read_csv2( # <5>
+  file = file.path(
+    datasets_url,
+    "OutputdataKnowledgeTransferEvent.csv"
+  ),
+  show_col_types = FALSE,
+  col_select = c("KnowledgeTransferEventId", "GrantNumber")
+) # <5>
+```
+1. Hier wählen wir die Variablen aus, die wir nach Durchsicht der Variablen, die im Datensatz «Outputdaten: Wissenschaftliche Publikationen» verfügbar sind, gewählt haben. 
+2. Hier wählen wir die Variablen aus, die wir nach Durchsicht der Variablen, die im Datensatz «Outputdaten: Anwendungsorientierte Outputs» verfügbar sind, gewählt haben.
+3. Hier wählen wir die Variablen aus, die wir nach Durchsicht der Variablen, die im Datensatz «Outputdaten: «Kommunikation mit der Öffentlichkeit» verfügbar sind, gewählt haben. 
+4. Hier wählen wir die Variablen aus, die wir nach Durchsicht der Variablen, die im Datensatz «Outputdaten: Datasets» verfügbar sind, gewählt haben. 
+5. Hier wählen wir die Variablen aus, die wir nach Durchsicht der Variablen, die im Datensatz «Outputdaten: Veranstaltungen zum Wissenstransfer» verfügbar sind, gewählt haben.
+
+
+<div style="margin: 0; line-height: 0.875"><br></div>
+
+### Zusammenführen der Datensätze «Projekte» und «Outputdaten»
+
+Wie können wir die Datensätze nun, nachdem wir sie heruntergeladen haben, kombinieren (in der Datenbank-Terminologie wird von «join» gesprochen) und damit einen einzigen Datensatz erstellen, der die Outputdaten mit den Projektdaten verknüpft?
+
+Wir können die Tatsache nutzen, dass jede Zeile im Datenframe `grants` einem Projekt mit eindeutiger Identifikationsnummer entspricht und dass in jedem Datenframe mit Outputdaten eine Variable den Output eines Projekts mit dem Projekt verbindet, bei dem der Output erarbeitet wurde. Diese eindeutige Identifikationsnummer, die in allen Datenframes als `GrantNumber` bezeichnet wird, nutzen wir für die Zusammenführung der Datenframes.
+
+Für jeden «Outputdaten»-Datenframe verarbeiten wir die Daten entsprechend und erhalten damit die Zahl der Outputs jedes Projekts, das im Datenframe `grants` aufgeführt ist. Im folgenden Code-Beispiel zeigen wir dies für den Datenframe `output_pub`, der die wissenschaftlichen Publikationen darstellt.
+
+Zunächst zählen wir die Anzahl der wissenschaftlichen Publikationen für jedes Projekt im Datenframe `output_pub` (siehe Code-Annotation 2). Als Nächstes führen wir die Anzahl der wissenschaftlichen Publikationen mit dem Datenframe `grants` zusammen, indem wir die Variable `GrantNumber` als Verknüpfungsschlüssel verwenden (siehe Code-Annotation 3)[^1].
+
+[^1]: In der Fachterminologie ist eine Zusammenführung («join») die Erweiterung eines Datenframes mit Daten aus einem anderen Datenframe, wobei Entsprechungen in den beiden Datenframes durch eine einzige Variable identifiziert («matched») werden können. Die Variable, die verwendet wird, um festzustellen, wo die beiden Datenframes Entsprechungen aufweisen, wird als Schlüssel («key») bezeichnet. Beispielsweise haben wir die Projektnummer als Schlüssel verwendet, um die Daten aus der rechten Tabelle (über wissenschaftliche Publikationen) mit den Projektdaten zusammenzuführen (mittels «right join»). Somit fügen wir für jede `GrantNumber`-Beobachtung im Datensatz `grants`, für die es eine Entsprechung («match») mit einer `GrantNumber`-Beobachtung im Datensatz `output_pub` gibt, die Variablen für die Anzahl der wissenschaftlichen Publikationen zur entsprechenden Projektnummer in `grants` hinzu. Für weitere Einzelheiten zur Verwendung von «joins» mit dplyr verweisen wir auf das entsprechende Kapitel aus [R for Data Science (2e)](https://r4ds.hadley.nz/joins.html).
+
+```{r}
+#| echo: true
+library(tidyr) # <1>
+
+output_pub_summary <- output_pub |>
+  dplyr::count(GrantNumber, name = "n") |> # <2>
+  dplyr::right_join( # <3>
+    grants,
+    by = dplyr::join_by(GrantNumber)
+  ) |> # <3>
+  dplyr::mutate(
+    n = tidyr::replace_na(n, 0), # <4>
+    output_type = "Scientific publications" # <5>
+  )
+```
+1. Das `tidyr`-Paket wird benötigt, um die Funktion `replace_na()` zu verwenden.
+2. Da es sich bei jeder Zeile um einen einzigen Output handelt, entspricht die Zahl der für eine `GrantNumber` aufgelisteten Beobachtungen der Anzahl Outputs pro Projekt. Das Ergebnis ist ein neuer Datenframe zur Anzahl («counts»), mit zwei Spalten (`GrantNumber` und `n`; wobei das n die Anzahl wissenschaftlicher Publikationen für das Projekt angibt).
+3. Mit `right_join()` fügen wir zu jeder Projektnummer in «Projekte» (dem Datenframe auf der rechten Seite der Zusammenführung) die entsprechenden, von uns berechneten «counts» (Anzahl) hinzu (diese würden auf der linken Seite erscheinen, wenn der Code als einzelne Zeile geschrieben wäre).
+4. Bei der Verwendung von «right join» werden die Beobachtungen, die im Datenframe auf der rechten Seite, nicht aber auf der linken Seite der Zusammenführung gefunden werden, durch `NA` ersetzt. In unserem Fall wurden keine Projekte ohne wissenschaftliche Publikationen in dem von uns erstellten «Anzahl»-Datenframe gefunden, weshalb der Wert von n standardmässig auf `NA` gesetzt wurde. Um sicherzustellen, dass der Anteil der Beiträge mit wissenschaftlichen Publikationen korrekt berechnet wird, ersetzen wir `NA` durch 0. 
+5. Wir erstellen eine Variable `output_type`, die angibt, auf welche Art von Outputdaten sich die «Anzahl»-Beobachtungen beziehen.
+
+<div style="margin: 0; line-height: 0.875"><br></div>
+
+Wir haben nun gesehen, wie die Daten der wissenschaftlichen Publikationen vorbereitet und mit den entsprechenden Projekten zusammengeführt werden. Dieselben Schritte können wir nun analog durchführen für die Datenframes mit den Daten zu den anwendungsorientierten Outputs, den Kommunikationen mit der Öffentlichkeit, den Datensets und den Veranstaltungen zum Wissenstransfer.
+
+```{r}
+#| echo: true
+#| code-fold: true
+#| code-summary: |
+#|   Hier klicken, um den Code für das Zusammenführen der übrigen
+#|   «Outputdaten»-Datensätze mit dem «Projekte»-Datensatz anzusehen.
+# Join use-inspired outputs data frame to the grants data frame
+output_use_inspired_summary <- output_use_inspired |> # <1>
+  dplyr::count(GrantNumber) |>
+  dplyr::right_join(
+    grants,
+    by = dplyr::join_by(GrantNumber)
+  ) |>
+  dplyr::mutate(
+    n = tidyr::replace_na(n, 0),
+    output_type = "Use-inspired outputs"
+  ) # <1>
+
+# Join public communications data frame to the grants data frame
+output_public_comm_summary <- output_public_comm |> # <2>
+  dplyr::count(GrantNumber) |>
+  dplyr::right_join(
+    grants,
+    by = dplyr::join_by(GrantNumber)
+  ) |>
+  dplyr::mutate(
+    n = tidyr::replace_na(n, 0),
+    output_type = "Public communications"
+  ) # <2>
+
+# Join datasets data frame to the grants data frame
+output_dataset_summary <- output_dataset |> # <3>
+  dplyr::count(GrantNumber) |>
+  dplyr::right_join(
+    grants,
+    by = dplyr::join_by(GrantNumber)
+  ) |>
+  dplyr::mutate(
+    n = tidyr::replace_na(n, 0),
+    output_type = "Datasets"
+  ) # <3>
+
+# Join knowledge transfer events data frame to the grants data frame
+output_knowledge_transfer_summary <- output_knowledge_transfer |> # <4>
+  dplyr::count(GrantNumber) |>
+  dplyr::right_join(
+    grants,
+    by = dplyr::join_by(GrantNumber)
+  ) |>
+  dplyr::mutate(
+    n = tidyr::replace_na(n, 0),
+    output_type = "Knowledge transfer events"
+  ) # <4>
+```
+1. Wir wiederholen die gleichen Schritte wie bei den Outputdaten zu den wissenschaftlichen Publikationen, aber mit dem Datenframe zu den anwendungsorientierten Outputs (`output_use_inspired`), und wir setzen die Variable `output_type` auf «Anwendungsorientierte Outputs».
+2. Wir wiederholen die gleichen Schritte wie bei den Outputdaten zu den wissenschaftlichen Publikationen, aber mit dem Datenframe `output_public_comm`, und wir setzen die Variable `output_type` auf «Kommunikation mit der Öffentlichkeit».
+3. Wir wiederholen die gleichen Schritte wie bei den Outputdaten zu den wissenschaftlichen Publikationen, aber mit dem Datenframe `output_dataset`, und wir setzen die Variable  `output_type` auf «Datensets».
+4. Wir wiederholen die gleichen Schritte wie bei den Outputdaten zu den wissenschaftlichen Publikationen, aber mit dem Datenframe `output_knowledge_transfer`, und wir setzen die Variable `output_type` auf «Veranstaltungen zum Wissenstransfer».
+
+<div style="margin: 0; line-height: 0.875"><br></div>
+
+### Berechnung der Anteile der Projekte mit mindestens einem Output nach Art der Outputdaten
+
+Bevor wir unsere Grafik erstellen können, müssen wir in einem letzten Schritt für jede Art von Outputdaten berechnen, welcher Anteil der Projekte mindestens einen Output hat.
+
+Im nächsten Code-Beispiel beginnen wir mit der Kombination aller zusammengefassten Outputdaten-Datenframes zu einem einzigen. Bevor wir die Anteile berechnen können, müssen wir das Jahr für jedes Projekt bestimmen. Wir erstellen dazu eine neue Variable mit der Bezeichnung `EffectiveEndYear`, indem die Jahreskomponente aus der Variable `EffectiveGrantEndDate` extrahiert wird. Zuletzt können wir nun für jedes Jahr und jede Art von Outputdaten den Anteil der Projekte mit mindestens einem Output berechnen.
+
+```{r}
+#| echo: true
+library(stringr) # <1>
+
+all_grants_with_output_summary <- dplyr::bind_rows( # <2>
+  output_pub_summary,
+  output_use_inspired_summary,
+  output_public_comm_summary,
+  output_dataset_summary,
+  output_knowledge_transfer_summary
+) |> # <2>
+  dplyr::mutate(
+    EffectiveEndYear = as.integer( # <3>
+      stringr::str_extract(EffectiveGrantEndDate, "^\\d{4}")
+    ) # <3>
+  ) |>
+  dplyr::select(!EffectiveGrantEndDate) |> # <4>
+  dplyr::summarise( # <5>
+    prop = mean(n > 0),
+    .by = c(EffectiveEndYear, output_type)
+  ) |> # <5>
+  dplyr::mutate(
+    output_type = case_match(
+      output_type,
+      "Scientific publications" ~ "Wissenschaftliche\nPublikationen",
+      "Use-inspired outputs" ~ "Anwendungsorientierte\nOutputs",
+      "Public communications" ~ "Kommunikation mit der\nÖffentlichkeit",
+      "Datasets" ~ "Datensets",
+      "Knowledge transfer events" ~ "Veranstaltungen zum\nWissenstransfer"
+    )
+  )
+```
+1. Wir benötigen das Paket `stringr`, um das Jahr aus `EffectiveGrantEndDate` zu extrahieren.
+2. Wir verwenden `bind_rows()`, um die Datenframes mit den «Counts» (Anzahl) der verschiedenen Outputdaten zu kombinieren. Mit dieser Funktion wird ein längerer Datenframe erstellt, indem jeder Datenframe jeweils nach dem vorherigen hinzugefügt wird.
+3. Da der String mit dem effektiven Enddatum des Projekts ein fixes Format hat, nämlich «YYYY-MM-DD» (Y = Jahr, M = Monat, D = Tag), können wir die Funktion `str_extract()` mit einem regulären Ausdruck verwenden, um das Jahr zu extrahieren. Der von uns verwendete reguläre Ausdruck besagt, dass wir die ersten vier Zeichen am Anfang der Zeichenfolge extrahieren wollen und dass diese Zeichen Ziffern sein müssen. Zu beachten ist auch die Typumwandlung der Extraktion in einen Integer.
+4. Wir entfernen die Variable `EffectiveGrantEndDate`, die nicht mehr benötigt wird.
+5. Wir berechnen für jede Kombination von Jahr und Art der Outputdaten den Anteil der Projekte mit mindestens einem Output (d. h. den Mittelwert der Projekte mit `n > 0`).
+
+<div style="margin: 0; line-height: 0.875"><br></div>
+
+### Visualiser les résultats
+
+Wir können nun die Grafik erstellen, die wir zu Beginn dieser Datengeschichte gezeigt haben, indem wir das Paket [`ggplot2`](https://ggplot2.tidyverse.org/) verwenden. Wir wollen als Ergebnis eine Grafik, die Folgendes zeigt:
+
+-   das effektive Abschlussjahr der Projekte auf der x-Achse
+-   den Anteil der Projekte auf der y-Achse
+-   unterschiedliche Farben für die verschiedenen Arten von Outputs 
+
+Im nachstehenden Code-Beispiel wird die Grafik erstellt und dabei Folgendes festgelegt:
+
+-   das [Mapping](https://ggplot2.tidyverse.org/articles/ggplot2.html#mapping) zwischen den Elementen der Plots und den Daten
+-   Die Grafik-[Layers](https://ggplot2.tidyverse.org/articles/ggplot2.html#layers), die bestimmen, wie die Daten dargestellt werden (hier Punkte und Linien)
+-   die [Scales](https://ggplot2.tidyverse.org/articles/ggplot2.html#scales) der Grafik (hier wird die Skalierung der y-Achse definiert, aber es könnte z. B. auch die Farbskala sein)
+
+```{r}
+#| echo: true
+library(ggplot2) # <1>
+
+base_plot <- ggplot2::ggplot(all_grants_with_output_summary) + # <2>
+  ggplot2::aes( # <3>
+    x = EffectiveEndYear,
+    y = prop,
+    color = output_type,
+    group = output_type
+  ) + # <3>
+  ggplot2::geom_point(size = 1.25) + # <4>
+  ggplot2::geom_line() + # <4>
+  ggplot2::geom_text( # <5>
+    data = \(x) dplyr::filter(x, EffectiveEndYear == 2024), # <6>
+    ggplot2::aes(
+      label = output_type,
+      x = EffectiveEndYear + 0.35, # <7>
+      y = dplyr::if_else(
+        stringr::str_starts(output_type, "Manif|Verans"),
+        prop - 0.025,
+        prop
+      ) # <7>
+    ),
+    size = 3,
+    hjust = 0,
+    lineheight = 0.75,
+    color = "black"
+  ) # <5>
+```
+1. Wir benötigen das Paket `ggplot2`, um die Grafik zu erstellen.
+2. Wir übergeben den Datenframe `all_grants_with_output_summary` an `ggplot()`, um das Plot-Objekt zu starten.
+3. In einem zweiten Schritt definieren wir die Ästhetik: das Mapping zwischen den Variablen und den Elementen des Plots.
+4. Zunächst fügen wir einen Punkt für jeden Datenpunkt in den Daten hinzu, zusammen mit einer Linie, die durch diese Punkte verläuft, indem wir eine Kombination aus `geom_point()` und `geom_line()` verwenden. Das «aesthetics argument» wird nicht benötigt, da es von den vorangegangenen Schritten übernommen wird.
+5. Um das visuelle Mapping zwischen Farben und Outputarten zu vereinfachen, fügen wir am Ende jeder Zeile ein Label hinzu.
+6. Für die Labels filtern wir die ursprünglichen Daten, die für die Grafik verwendet wurden, um nur die Datenpunkte zu behalten, die dem effektiven Endjahr 2024 entsprechen. So haben wir ein einziges Label pro Outputart, das wir einfach neben dem letzten Datenpunkt für den entsprechenden Output platzieren können.
+7. Feinabstimmung der Positionierung des Labels neben dem letzten Datenpunkt für die entsprechende Outputart.
+
+<div style="margin: 0; line-height: 0.875"><br></div>
+
+Damit erstellt das `base_plot`-Objekt nun eine Grafik mit dem Default-Design von `ggplot2.` Um den Stil zu vereinfachen und der SNF-Datengeschichte anzupassen, müssen wir zwei zusätzliche Schritte durchführen. Dazu verwenden wir Funktionen aus dem Paket `snf.datastory`.
+
+```{r}
+#| echo: true
+if (!require("snf.datastory")) { # <1>
+  if (!require("devtools")) {
+    install.packages("devtools")
+    library(devtools)
+  }
+  install_github("snsf-data/snf.datastory")
+  library(snf.datastory)
+} # <1>
+
+base_plot_with_snsf_theme <- base_plot +
+  ggplot2::scale_y_continuous( # <2>
+    breaks = seq(0, 1, 0.1), labels = scales::percent
+  ) + # <2>
+  ggplot2::scale_x_continuous( # <3>
+    breaks = seq(2005, 2024, 3),
+    expand = ggplot2::expansion(add = c(0.5, 5.5))
+  ) + # <3>
+  scale_color_datastory() + # <4>
+  get_datastory_theme(legend_position = "none") # <5>
+```
+1. Das Paket `snf.datastory` ist auf CRAN nicht verfügbar, aber auf Github. Dieser Code prüft, ob das Paket installiert ist. Falls ja, wird das Paket geladen. Wenn nicht, wird geprüft, ob das Paket `devtools` installiert ist (das erforderlich ist, um ein Paket von Github zu installieren), und es wird gegebenenfalls zuerst installiert, bevor das Paket `snf.datastory` aus Github installiert wird.
+2. Wir stellen das Format der y-Achse auf Prozent ein und legen fest, dass die Labels (d. h. die «Breaks») jeweils im Abstand von 10 % platziert werden.
+3. Wir legen fest, dass die x-Achse alle drei Jahre unterteilt wird, und wir fügen auf der rechten Seite der Grafik mehr Platz für die Labels mit den Beschriftungen hinzu.
+4. Wir wenden das Farbschema der SNF-Datengeschichte auf die Variable an, die der Farbgebung zugeordnet ist (weitere Einzelheiten zum Farbschema der SNF-Datengeschichte siehe [Quellcode auf Github ](https://github.com/snsf-data/snf.datastory/blob/main/R/scales.R)).
+5. Wir verwenden das `ggplot2`-«Theme» der SNF-Datengeschichte. Das [Theme](https://ggplot2.tidyverse.org/articles/ggplot2.html#theme) steuert die Aspekte eines Plots, die nicht von den Daten gesteuert werden (siehe [Quellcode auf Github](https://github.com/snsf-data/snf.datastory/blob/main/R/plotting.R) für weitere Details über das Theme der SNF-Datengeschichten). Da wir Beschriftungs-Labels neben den farbigen Linien verwenden, brauchen wir keine Legende, und wir können diese mit `legend_position = "none"`.
+
+Wir finalisieren die Grafik mit Labels zu den Änderungen des SNF betreffend Erhebung von Outputdaten der Beitragsempfangenden:
+
+-   2011: Der SNF beginnt mit der systematischen Erhebung von Outputdaten.
+-   2018: Der SNF fügt «Datensets» zu den erhobenen Outputdaten hinzu.
+-   2020: Der SNF unterzeichnet die DORA-Erklärung.
+
+Da die Daten für die Anzeige der Labels, die diese drei Ereignisse beschreiben, nicht in den für die Grafik verwendeten Daten enthalten sind, müssen wir Datenframes mit den erforderlichen Daten erstellen, um diese Labels in der Grafik zu positionieren (siehe Code-Annotationen 1 und 2 im folgenden Code-Beispiel). Als Nächstes vervollständigen wir die Grafik, indem wir zu `base_plot_with_snsf_theme` die Labels hinzufügen, die wir mit dem Jahr verknüpfen, in dem das entsprechende Ereignis stattfand.
+
+```{r}
+#| echo: true
+#| fig-height: 3.75
+label_data <- tibble( # <1>
+  x = c(2011, 2018, 2020),
+  y = c(1.15, 1.15, 0.65),
+  text = c(
+    paste(
+      "Der SNF beginnt mit der systematischen",
+      "Erhebung der Outputdaten von",
+      "Beitragsempfänger:innen.",
+      sep = "\n"
+    ),
+    paste(
+      "Der SNF erweitert die Outputdaten ",
+      "September 2018 um die ",
+      "Kategorie «Datensets».",
+      sep = "\n"
+    ),
+    paste(
+      "Der SNF unterzeichnet ",
+      "die DORA-Erklärung.",
+      sep = "\n"
+    )
+  )
+) # <1>
+
+vline_data <- tibble( # <2>
+  x = rep(c(2011, 2018, 2020), 2),
+  y = c(0, 1, 0, 1, 0, 0.6)
+) # <2>
+
+base_plot_with_snsf_theme +
+  geom_line( # <3>
+    data = vline_data,
+    aes(x = x, y = y, group = x),
+    alpha = 0.25,
+    linetype = 3,
+    linewidth = 0.35,
+    inherit.aes = FALSE,
+  ) + # <3>
+  geom_label( # <4>
+    data = label_data,
+    aes(label = text, x = x, y = y, group = x),
+    size = 2.5,
+    hjust = 0.5,
+    fill = "white",
+    color = "#909090",
+    label.size = NA,
+    vjust = 1,
+    inherit.aes = FALSE
+  ) # <4>
+```
+1. Wir erstellen einen Datenframe mit den x- und y-Positionen und dem Text, der die Änderungen bei der Erhebung von Outputdaten durch den SNF beschreibt. Dies dient dazu, die Labels im Plot `base_plot_mit_snsf_thema` zu platzieren.
+2. Wir erstellen einen Datenframe mit den x- und y-Positionen der gepunkteten Linien, um das Label mit dem Jahr auf der x-Achse für die entsprechenden Ereignisse zu verbinden.
+3. Wir verwenden `geom_line()` mit dem Datenframe `vline_data`, um das Jahr auf der x-Achse mit der Position der Labels zu verbinden.
+4. Wir verwenden `geom_label()` mit dem Datenframe `label_data`, um die Labels hinzuzufügen.
+
+Der hier verwendete Ansatz zur Kombination der Projekte mit den fünf gewählten Arten von Outputdaten kann natürlich analog auf die anderen Outputarten erweitert werden. Es ist auch möglich, Datensätze, die Personendaten enthalten, mit Projektdaten zu verknüpfen. Jede Rolle, die eine Forscherin oder ein Forscher in einem vom SNF geförderten Projekt innehatte, ist in den Spalten zur persönlichen Rolle des Datensatzes «Personen-Datei» aufgeführt (weitere Einzelheiten siehe Abschnitt «Personen-Datei» des [Glossars](https://data.snf.ch/about/glossary)).
+
+Wir hoffen, dass Ihnen dieses Tutorial dabei hilft, Ideen für interessante neue Analysen von SNF-Daten umzusetzen. Wir unterstützen Sie gerne bei der Interpretation Ihrer Ergebnisse.
+
+::: info-box
+### Über die Outputdaten des SNF
+
+Der SNF begann im August 2011, systematisch Daten zum Forschungsoutput zu erheben. Vorher war es für die Beitragsempfangenden freiwillig, Daten zu ihrem Forschungsoutput vorzulegen. Die Kategorie «Datasets» wurde im Jahr 2018 hinzugefügt.
+
+Wie die verschiedenen Arten von [Datensätzen](https://data.snf.ch/datasets) mit Outputdaten im SNF-Datenportal zeigen, erkennt der SNF die Vielfalt der Outputs bei der geförderten Forschung an. In diesem Datenbericht konzentrieren wir uns auf fünf Arten von Forschungsoutput:
+
+-   **Wissenschaftliche Publikationen** -- Bücher, Buchkapitel, Artikel und andere Veröffentlichungen, die im Zusammenhang mit den Projekten entstanden sind (für weitere Einzelheiten siehe Abschnitt «ScientificPublication_Type» im [Glossar](https://data.snf.ch/about/glossary) des Datenportals).
+-   **Anwendungsorientierte Outputs** -- Software, Startups oder andere anwendungsorientierte Outputs, die im Zusammenhang mit den geförderten Projekten entwickelt wurden.
+-   **Kommunikation mit der Öffentlichkeit** -- Medienarbeit, Printmedien und andere Aktivitäten, die sich im Zusammenhang mit den geförderten Projekten an die breite Öffentlichkeit richten (vollständige Liste siehe Abschnitt «PublicCommunication_Type» im [Glossar](https://data.snf.ch/about/glossary) des Datenportals).
+-   **Datensets** : sets de données produits dans le contexte des projets encouragés
+-   **Veranstaltungen zum Wissenstransfer** -- von Beitragsempfangenden organisierte Anlässe oder Beiträge zu anderen Veranstaltungen im Rahmen der geförderten Projekte (siehe Abschnitt «KnowledgeTransferEvent_Type» im [Glossar](https://data.snf.ch/about/glossary) des Datenportals).
+:::
+
+Daten, Text und Code dieser Datengeschichte sind [auf Github verfügbar](`r params$github_url`) und [auf Zenodo archiviert](`r params$doi_url`). <br>DOI: `r str_remove(params$doi_url,"https://doi.org/")`
+
+```{r prevent-internal-snsf-packages}
+#| include: false
+
+# Internal SNSF packages must not be used in data stories, as their
+# pre-processing functions are internal and the corporate design differs from
+# the data portal.
+
+internal_pkg <- c("snfverse", "snf.preprocessing", "snf.plot")
+
+if (any(internal_pkg %in% loadedNamespaces())) {
+  stop(glue(
+    "You must not use internal SNSF packages in data stories.",
+    " Please resort to snf.datastory."
+  ))
+}
+```
