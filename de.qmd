@@ -141,7 +141,7 @@ background: #fef4e4;
 
 Dem SNF ist es ein Anliegen, die Öffentlichkeit über seine Fördertätigkeit zu informieren. Dazu dienen auch die frei zugänglichen Daten (Open Data) auf dem SNF-Datenportal. Dieser Artikel ist Teil einer Serie, bei der wir aufzeigen, wie diese Daten verwendet werden können. Wir hoffen, dass dieses Tutorial Interessierten hilft, Open Data des SNF für Analysen über die Schweizer Forschungsförderung zu nutzen und dabei neue Ideen umzusetzen.
 
-[Im ersten Teil unserer Serie über Open Data des SNF](https://data.snf.ch/stories/offene-daten-analysieren-wer-erhaelt-foerderung-de.html),erklärten wir, wie man auf den Datensatz zu den SNF-Projekten zugreift und damit die jährlichen Zahlen zur Höhe und Anzahl der Förderbeiträge analysiert. Die [SNF-Datensätze](https://data.snf.ch/datasets) beschränken sich jedoch nicht auf kategoriale und numerische Metadaten über die unterstützten Projekte. Sie enthalten auch Einzelheiten wie die beteiligten Personen, die Abstracts und den Forschungsoutput. Durch die Kombination mehrerer Datensätze können Sie vielfältige Fragen untersuchen.
+[Im ersten Teil unserer Serie über Open Data des SNF](https://data.snf.ch/stories/offene-daten-analysieren-wer-erhaelt-foerderung-de.html) erklärten wir, wie man auf den Datensatz zu den SNF-Projekten zugreift und damit die jährlichen Zahlen zur Höhe und Anzahl der Förderbeiträge analysiert. Die [SNF-Datensätze](https://data.snf.ch/datasets) beschränken sich jedoch nicht auf kategoriale und numerische Metadaten über die unterstützten Projekte. Sie enthalten auch Einzelheiten wie die beteiligten Personen, die Abstracts und den Forschungsoutput. Durch die Kombination mehrerer Datensätze können Sie vielfältige Fragen untersuchen.
 
 In diesem zweiten Teil der Serie über Open Data erfahren Sie, wie Sie SNF-Datensätze mit der [Programmiersprache R](https://www.r-project.org/) und Paketen aus dem *[tidyverse](https://www.tidyverse.org/)* lesen und kombinieren können. Durch die Verknüpfung der Datensätze «Projekte» und «Outputdaten» erstellen wir eine Grafik, die veranschaulicht, wie vielfältig die Forschungsoutputs im Rahmen von SNF-Projekten sind.^[Wie auf der linken Seite der Grafik deutlich zu sehen ist, wurden bis Mitte 2011 kaum relevante Daten erfasst. Ab diesem Jahr verlangte der SNF von den Forschenden systematisch Angaben über ihren Forschungsoutput. Weitere Einzelheiten finden Sie in der Infobox am Ende dieses Tutorials.] Mit Massnahmen wie der Unterzeichnung der [DORA-Erklärung](https://www.snf.ch/de/neSdcJ948w1y33Nj/thema/dora-deklaration) und der Einführung eines [narrativen Lebenslaufs](https://www.snf.ch/de/f8TLKrHtiaxVbevw/seite/foerderung/dokumente-downloads/vorgaben-cv-liste-forschungsoutputs), engagiert sich der SNF an vorderster Front dafür, die Qualität des Forschungsoutputs als Ganzes anzuerkennen und nicht nur traditionelle Messgrössen wie Zitationswerte und Publikationslisten zu berücksichtigen.
 
@@ -500,7 +500,7 @@ all_grants_with_output_summary <- dplyr::bind_rows( # <2>
 
 <div style="margin: 0; line-height: 0.875"><br></div>
 
-### Visualiser les résultats
+### Visualisierung der Ergebnisse
 
 Wir können nun die Grafik erstellen, die wir zu Beginn dieser Datengeschichte gezeigt haben, indem wir das Paket [`ggplot2`](https://ggplot2.tidyverse.org/) verwenden. Wir wollen als Ergebnis eine Grafik, die Folgendes zeigt:
 
